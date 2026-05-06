@@ -127,3 +127,23 @@ void alterarCorLedRGB(int vermelho, int verde, int azul)
   debugInfo("G: " + String(verde));
   debugInfo("B: " + String(azul));
 }
+
+void tratarComando(const String &mensagem)
+{
+  const char *mensagemChar = mensagem.c_str();
+  lcd.clear();
+  if (strcmp(mensagemChar, "help") == 0)
+  {
+    debugInfo("Comandos:\n> reset\n> start\n> ...");
+  }
+  else if (strcmp(mensagemChar, "start") == 0)
+  {
+    publicarMensagem(TOPICO_LATERAIS, "start");
+  }
+  else if (strcmp(mensagemChar, "reset") == 0)
+  {
+    publicarMensagem(TOPICO_LATERAIS, "reset");
+  }
+  else
+    debugErro("Comando não encontrado! Use help para listar todos comandos.");
+}
