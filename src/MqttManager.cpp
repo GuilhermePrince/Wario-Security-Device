@@ -170,24 +170,34 @@ void conectarMQTT()
         {
             debugInfo("MQTT conectado com sucesso.");
 
-            int totalTopicos = obterTotalTopicosRecebimento();
+            int totalTopicosReceber = obterTotalTopicosRecebimento();
+            debugInfo("Total de tópicos de recebimento para inscrição: " + String(totalTopicosReceber));
 
-            debugInfo("Total de tópicos para incrição: " + String(totalTopicos));
+            int totalTopicosPublicar = obterTotalTopicosPublicacao();
+            debugInfo("Total de tópicos de publicacao para inscrição: " + String(totalTopicosPublicar));
 
-            for (int i = 0; i < totalTopicos; i++)
+            for(int i = 0; i < totalTopicosReceber; i++)
             {
-                const char *topico = obterTopicoRecebimento(i);
+                const char* topico = obterTopicoRecebimento(i);
 
                 bool inscrito = mqttClient.subscribe(topico);
+                
+                if(inscrito) debugInfo("Inscrito no tópico: " + String(topico));
+                
+                else debugErro("Falha ao se inscrever no tópico: " + String(topico));
+            }
+            
+            for(int i = 0; i < totalTopicosPublicar; i++)   //Inscreve nos tópicos de Publicação
+            {
+                const char* topico = obterTopicoPublicacao(i);
 
-                if (inscrito)
-                {
-                    debugInfo("Inscrito no tópico: " + String(topico));
-                }
-                else
-                {
-                    debugErro("Falha ao se inscrever no tópico: " + String(topico));
-                }
+                bool inscrito = mqttClient.subscribe(topico);
+                
+                if(inscrito) debugInfo("Inscrito no tópico: " + String(topico));
+            
+                else debugErro("Falha ao se inscrever no tópico: " + String(topico));
+
+                
             }
             // TODO: Publicar uma mensagem em um topico informando que o esp foi conectado
         }
@@ -267,4 +277,9 @@ bool mqttEstaConectado()
 int obterTotalTopicosRecebimento()
 {
     return TOTAL_TOPICOS_RECEBER;
+}
+
+int obterTotalTopicosPublicacao()
+{
+    return TOTAL_TOPICOS_PUBLICAR;
 }
