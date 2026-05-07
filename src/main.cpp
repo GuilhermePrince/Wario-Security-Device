@@ -145,12 +145,19 @@ void tratarJsonLateral(const String &mensagem)
     
     if(doc["alerta"].is<JsonObject>())
     {
-        if(doc["alerta"].is<bool>())
+        if(!doc["alerta"].is<bool>())
         {
-            estadoAlerta = doc["alerta"].as<bool>();
+         debugErro("Json invalido. use valores booleanos");
+         return;
         }
-        
+        else
+        {
+         estadoAlerta = doc["alerta"].as<bool>();
+         
+         void tratarEspLateral();
+        }
     }
+   
 
 }
 
@@ -172,14 +179,3 @@ void updateLed()
         break;
     }
 }
-
-void configuraLedRGB()
-{
- ledRGB.begin();
- ledRGB.setBrightness(100);
- ledRGB.clear();
- ledRGB.show();
-}
-
-void alterarCorLedRGB()
-{}
