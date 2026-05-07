@@ -27,7 +27,7 @@ Adafruit_NeoPixel ledRGB(
 
 Bounce botaoBoot = Bounce();
 
-uint8_t estadoAlerta = 0;
+bool estadoAlerta = 0;
 bool locked = 0;
 
 void configuraLedRGB();
@@ -116,75 +116,22 @@ void alterarCorLedRGB(int vermelho, int verde, int azul)
 
 void tratarJsonLateral(const String &mensagem)
 {
-    const char *message = mensagem.c_str();
-    if (strcmp(message, "alerta") == 0)
+    JsonDocument doc;
+    DeserializationError erro = deserializeJson(doc, mensagem);
+    
+    if(erro)
     {
-        alterarCorLedRGB(255, 0, 0);
-        debugInfo("Alarme disparado");
-        locked = true;
+        debugErro("Json inválido, corrija a formatação.");
         return;
     }
-    else if (strcmp(message, "reset") == 0)
+    
+    if(doc["alerta"].is<JsonObject>())
     {
-        debugInfo("RESETTING...");
-        countdown = TEMPO_ALARME;
-        locked = false;
-        return;
-    }
-    else if (strcmp(message, "ping") == 0)
-    {
-        debugInfo("PING BACK");
-        publicarMensagemNoTopico(0, "ping back");
-    }
-    else
-        debugErro("Comando não encontrado!");
-}
-
-void tratamentoEspLateral()
-{
-    bool estadoBotao = 1;
-    static bool estadoBotaoAnterior = estadoBotao;
-    static unsigned int tempoAnterior = 0;
-    const char *mensagem = "";
-    static uint8_t ultimoEstadoAlerta = 5;
-
-    if (!locked && millis() - tempoAnterior >= 1000)
-    {
-        if (countdown > -1)
-            countdown--;
-        tempoAnterior = millis();
-    }
-
-    if (botaoBoot.fell())
-    {
-        if (!locked)
+        if(doc["alerta"].is<bool>())
         {
-            debugInfo("Botão pressionado!");
-            countdown = TEMPO_ALARME;
-            publicarMensagemNoTopico(0, "pressionado");
+            estadoAlerta = doc["alerta"].as<bool>();
         }
-    }
-
-    if (locked)
-    {
-        estadoAlerta = 3;
-    }
-    else
-    {
-        if (countdown > 30)
-            estadoAlerta = 0;
-        else if (countdown > 15)
-            estadoAlerta = 1;
-        else if (countdown > 0)
-            estadoAlerta = 2;
-        else
-            estadoAlerta = 3;
-    }
-
-    if (estadoAlerta != ultimoEstadoAlerta)
-    {
-        updateLed();
-        ultimoEstadoAlerta = estadoAlerta;
+        
     }
 
 }
