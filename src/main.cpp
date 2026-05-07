@@ -8,6 +8,21 @@
 #include "MqttManager.h"
 #include "DebugManager.h"
 #include "secrets.h"
+#include <Bounce2.h>
+
+const uint8_t QUANTIDADE_LEDS = 3;
+const uint8_t PINO_LED_RGB = 36;
+
+Adafruit_NeoPixel ledRGB(
+    QUANTIDADE_LEDS,
+    PINO_LED_RGB,
+    NEO_GRB + NEO_KHZ800); 
+
+
+Bounce botaoBoot = Bounce();
+
+void configuraLedRGB();
+void alterarCorLedRGB(int verde, int laranja, int vermelho);
 
 const uint8_t PINO_LED_RGB = 48;
 const uint8_t QUANTIDADE_LEDS = 1;
@@ -52,6 +67,7 @@ void setup()
     conectarMQTT();
     botaoBoot.attach(0, INPUT_PULLUP);
     botaoBoot.interval(5);
+botaoBoot.attach(0, INPUT_PULLUP);
 }
 
 void loop()
@@ -104,6 +120,8 @@ void alterarCorLedRGB(int vermelho, int verde, int azul)
     vermelho = constrain(vermelho, 0, 255);
     verde = constrain(verde, 0, 255);
     azul = constrain(azul, 0, 255);
+botaoBoot.update();
+
 
     ledRGB.setPixelColor(0, ledRGB.Color(vermelho, verde, azul));
     ledRGB.show();
@@ -154,3 +172,14 @@ void updateLed()
         break;
     }
 }
+
+void configuraLedRGB()
+{
+ ledRGB.begin();
+ ledRGB.setBrightness(100);
+ ledRGB.clear();
+ ledRGB.show();
+}
+
+void alterarCorLedRGB()
+{}
