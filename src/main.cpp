@@ -9,62 +9,68 @@
 #include "DebugManager.h"
 #include "secrets.h"
 
-
 const uint8_t PINO_LED_RGB = 48;
 const uint8_t QUANTIDADE_LEDS = 1;
 
+const int TEMPO_ALARME = 60;
+int countdown = TEMPO_ALARME;
+bool houveTroca = 0;
 
-
-const char TOPICO_COMANDO[] = "";  //Não é necessário ponteiro pois nesse caso o número de caracteres é fixo
+const char TOPICO_LATERAIS_A[] = "wsd/laterais/a";
+const char TOPICO_CENTRAL[] = "wsd/central";
 
 Adafruit_NeoPixel ledRGB(
     QUANTIDADE_LEDS,
     PINO_LED_RGB,
-    NEO_GRB + NEO_KHZ800       //Duas constantes que definem a saidas do rgb e a frquencia de propagacao da informacao entre os LED`s, nesse caso é igual a 82
+    NEO_GRB + NEO_KHZ800 // Duas constantes que definem a saidas do rgb e a frquencia de propagacao da informacao entre os LED`s, nesse caso é igual a 82
 );
 
 Bounce botaoBoot = Bounce();
 
 uint8_t estadoAlerta = 0;
-
+bool locked = 0;
 
 void configuraLedRGB();
 void alterarCorLedRGB(int vermelho, int verde, int azul);
-void tratarJsonLateral(const String& mensagem);
+void tratarJsonLateral(const String &mensagem);
 
-void tratarMensagemRecebida(const char* topico, const String& mensagem);
+void tratarMensagemRecebida(const char *topico, const String &mensagem);
 
 void tratamentoEspLateral();
 
+void updateLed();
 
-void setup() 
+void setup()
 {
-configurarDebug();
+    configurarDebug();
 
-configuraLedRGB();
+    configuraLedRGB();
 
-conectarWiFi();
-configurarMQTT();
-registrarCallbackMensagem(tratarMensagemRecebida);
-conectarMQTT();
+    conectarWiFi();
+    configurarMQTT();
+    registrarCallbackMensagem(tratarMensagemRecebida);
+    conectarMQTT();
+    botaoBoot.attach(0, INPUT_PULLUP);
+    botaoBoot.interval(5);
 }
 
-void loop() 
+void loop()
 {
+    houveTroca = false;
     garantirWiFiConectado();
     garantirMQTTConectado();
     botaoBoot.update();
     loopMQTT();
 
-    
-   tratamentoEspLateral();
+    tratamentoEspLateral();
 }
 
-void tratarMensagemRecebida(const char* topico, const String& mensagem)
+void tratarMensagemRecebida(const char *topico, const String &mensagem)
 {
     debugInfo("======================================");
     debugInfo("Mensagem recebida na aplicação");
-    
+    debugInfo("======================================");
+
     if (topico == nullptr)
     {
         debugErro("Tópico MQTT inválido");
@@ -74,33 +80,31 @@ void tratarMensagemRecebida(const char* topico, const String& mensagem)
     debugInfo("Tópico: " + String(topico));
     debugInfo("Mensagem " + mensagem);
 
-    if(strcmp(topico, TOPICO_COMANDO) == 0)
+    if (strcmp(topico, TOPICO_LATERAIS_A) == 0)
     {
         tratarJsonLateral(mensagem);
         return;
     }
-    
+
     debugErro("Tópico não tratado: " + String(topico));
-
 }
-
 
 void configuraLedRGB()
 {
     ledRGB.begin();
-    ledRGB.setBrightness(80);   //Colocamos a qtd de brilho para o led de 0 a 255
+    ledRGB.setBrightness(80); // Colocamos a qtd de brilho para o led de 0 a 255
     ledRGB.clear();
-    ledRGB.show();      //atualiza estado led
+    ledRGB.show(); // atualiza estado led
 
     debugInfo("LED RGB configurado no GPIO " + String(PINO_LED_RGB));
 }
 
 void alterarCorLedRGB(int vermelho, int verde, int azul)
 {
-    vermelho = constrain(vermelho, 0 ,255);
-    verde  = constrain(verde, 0 ,255);
-    azul = constrain(azul, 0 ,255);
-    
+    vermelho = constrain(vermelho, 0, 255);
+    verde = constrain(verde, 0, 255);
+    azul = constrain(azul, 0, 255);
+
     ledRGB.setPixelColor(0, ledRGB.Color(vermelho, verde, azul));
     ledRGB.show();
 
@@ -108,81 +112,33 @@ void alterarCorLedRGB(int vermelho, int verde, int azul)
     debugInfo("R: " + String(vermelho));
     debugInfo("G: " + String(verde));
     debugInfo("B: " + String(azul));
-
-
 }
 
-
-void tratarJsonLateral(const String& mensagem)
+void tratarJsonLateral(const String &mensagem)
 {
-    static bool estadoAlerta = false;
     const char *message = mensagem.c_str();
-    if(strcmp(message, "alerta") == 0) 
+    if (strcmp(message, "alerta") == 0)
     {
         alterarCorLedRGB(255, 0, 0);
-        debugInfo("Alarme disparado, há um invasor");
+        debugInfo("Alarme disparado");
+        locked = true;
         return;
     }
-    else debugErro("Comando incorreto.");
-
-   
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-    // JsonDocument doc;
-
-    // DeserializationError erro = deserializeJson(doc, mensagem);
-
-    // if(erro)
-    // {
-    //     debugErro("Erro ao interpretar o Json");
-    //     debugErro(erro.c_str());
-    //     return;
-    // }
-
-    
-    // if(doc["led"].is<JsonObject>())
-    // {
-    //     if(!doc["lampada"].is<bool>())
-    //     {
-    //         debugErro("Json invalido. Use valores booleanos");
-    //         return;
-    //     }
-    //     else
-    //     {
-    //         bool estadoLampada = doc["lampada"].as<bool>();
-    //     }
-
-    //     if(!doc["led"]["r"].is<int>() || 
-    //     !doc["led"]["g"].is<int>() || 
-    //     !doc["led"]["b"].is<int>())
-    //     {
-    //         debugErro("JSON Invalido. Use led.r, led.g e led.b");
-    //         return;
-    //     }
-    //     else
-    //     {
-    //         int vermelho = doc["led"]["r"].as<int>();
-    //         int verde = doc["led"]["g"].as<int>();
-    //         int azul = doc["led"]["b"].as<int>();
-
-    //         alterarCorLedRGB(vermelho, verde, azul);
-    //     }
-    // }
+    else if (strcmp(message, "reset") == 0)
+    {
+        debugInfo("RESETTING...");
+        countdown = TEMPO_ALARME;
+        locked = false;
+        return;
+    }
+    else if (strcmp(message, "ping") == 0)
+    {
+        debugInfo("PING BACK");
+        publicarMensagemNoTopico(0, "ping back");
+    }
+    else
+        debugErro("Comando não encontrado!");
 }
-
 
 void tratamentoEspLateral()
 {
@@ -190,30 +146,64 @@ void tratamentoEspLateral()
     static bool estadoBotaoAnterior = estadoBotao;
     static unsigned int tempoAnterior = 0;
     const char *mensagem = "";
-    
-    static int countdown = 20;
+    static uint8_t ultimoEstadoAlerta = 5;
 
-    if (millis() - tempoAnterior >= 1000)
+    if (!locked && millis() - tempoAnterior >= 1000)
     {
-        countdown--;
+        if (countdown > -1)
+            countdown--;
+        tempoAnterior = millis();
     }
 
-    if(botaoBoot.changed())
+    if (botaoBoot.fell())
     {
-        estadoBotao = botaoBoot.read();
+        if (!locked)
+        {
+            debugInfo("Botão pressionado!");
+            countdown = TEMPO_ALARME;
+            publicarMensagemNoTopico(0, "pressionado");
+        }
     }
 
-    if(estadoBotaoAnterior && !estadoBotao)
+    if (locked)
     {
-        estadoAlerta = 0;
-        tempoAnterior == millis();
-        countdown = 20;
-        mensagem = "resetCountdown";
-        publicarMensagemNoTopico(0, mensagem);
+        estadoAlerta = 3;
     }
-    
-    if(countdown <= 20 && countdown > 5) estadoAlerta = 0;
-    else if(countdown < 0) estadoAlerta = 1;
-    else estadoAlerta = 2;
+    else
+    {
+        if (countdown > 30)
+            estadoAlerta = 0;
+        else if (countdown > 15)
+            estadoAlerta = 1;
+        else if (countdown > 0)
+            estadoAlerta = 2;
+        else
+            estadoAlerta = 3;
+    }
 
+    if (estadoAlerta != ultimoEstadoAlerta)
+    {
+        updateLed();
+        ultimoEstadoAlerta = estadoAlerta;
+    }
+
+}
+
+void updateLed()
+{
+    switch (estadoAlerta)
+    {
+    case 0:
+        alterarCorLedRGB(0, 255, 0);
+        break;
+    case 1:
+        alterarCorLedRGB(255, 150, 0);
+        break;
+    case 2:
+        alterarCorLedRGB(255, 25, 0);
+        break;
+    case 3:
+        alterarCorLedRGB(255, 0, 0);
+        break;
+    }
 }

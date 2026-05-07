@@ -56,14 +56,16 @@ emyPxgcYxn/eR44/KJ4EBs+lVDR3veyJm+kXQ99b21/+jh5Xos1AnX5iItreGCc=
 )EOF";
 
 const char *TOPICOS_PUBLICAR[] = {
-    "wsd/central"};
+    "wsd/central"
+};
 
 const int TOTAL_TOPICOS_PUBLICAR = 1;
 
 const char *TOPICOS_RECEBER[] = {
-    "wsd/laterais"};
+    "wsd/laterais/a"
+};
 
-const int TOTAL_TOPICOS_RECEBER = 3;
+const int TOTAL_TOPICOS_RECEBER = 1;
 
 //====================================
 // DEBUG
