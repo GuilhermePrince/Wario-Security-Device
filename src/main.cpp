@@ -11,6 +11,7 @@
 
 const uint8_t PINO_LED_RGB = 48;
 const uint8_t QUANTIDADE_LEDS = 1;
+const uint8_t PINO_BUZZER = 36;
 
 Adafruit_NeoPixel ledRGB(
     QUANTIDADE_LEDS,
@@ -30,43 +31,51 @@ int countdown = 20;
 
 void tratarMensagemRecebida(const char *topico, const String &mensagem);
 void tratarComando(const String &mensagem);
-void configuraLedRGB();
+void configurarLedRGB();
 void alterarCorLedRGB(int vermelho, int verde, int azul);
 void modoAlerta();
 
-void setup() 
+void setup()
 {
-  configurarDebug();
+    pinMode(PINO_BUZZER, OUTPUT);
+    configurarDebug();
+    configurarMQTT();
+    configurarLedRGB();
+    conectarWiFi();
+    registrarCallbackMensagem(tratarMensagemRecebida);
+    conectarMQTT();
 
-  configuraLedRGB();
+    lcd.init();
+    lcd.backlight();
+    lcd.print("WS DEVICE");
 
-  conectarWiFi();
-  configurarDebug();
-  registrarCallbackMensagem(tratarMensagemRecebida);
-  conectarMQTT();
-
-  lcd.init();
-  lcd.backlight();
-  lcd.print("WS DEVICE");
-
-  alterarCorLedRGB(0, 255, 0);
 }
 
 void loop()
 {
     static unsigned long before = 0;
-    if(millis() - before >= 1000)
+    static bool buzzerSound = 0;
+    if (millis() - before >= 1000)
     {
-        countdown--;
-        lcd.setCursor(0, 2);
-        lcd.printf("Tempo restante: %d  ", countdown);
-    }
+        before = millis();
+        if (countdown > 0)
+        {
+            countdown--;
+            lcd.setCursor(0, 2);
+            lcd.printf("Tempo restante: %d  ", countdown);
 
-    if(countdown == 0)
-    {
-        lampada.blink(2);
-        publicarMensagem(TOPICO_LATERAIS, "alerta");
-        alterarCorLedRGB(255, 0, 0);
+            if (countdown == 0)
+            {
+                lampada.blink(2);
+                publicarMensagem(TOPICO_LATERAIS, "alerta");
+                alterarCorLedRGB(255, 0, 0);
+            }
+        }
+        else
+        {
+        buzzerSound = !buzzerSound;
+        buzzerSound ? tone(PINO_BUZZER, 800) : tone(PINO_BUZZER, 400);
+        }    
     }
 
     garantirMQTTConectado();
@@ -76,74 +85,75 @@ void loop()
 
 void tratarMensagemRecebida(const char *topico, const String &mensagem)
 {
-  debugInfo("==============================");
-  debugInfo("Mensagem recebida na aplicação");
-  debugInfo("==============================");
+    debugInfo("==============================");
+    debugInfo("Mensagem recebida na aplicação");
+    debugInfo("==============================");
 
-  if (topico == nullptr)
-  {
-    debugErro("Tópico MQTT inválido");
-    return;
-  }
+    if (topico == nullptr)
+    {
+        debugErro("Tópico MQTT inválido");
+        return;
+    }
 
-  debugInfo("Tópico: " + String(topico));
-  debugInfo("Mensagem: " + mensagem);
+    debugInfo("Tópico: " + String(topico));
+    debugInfo("Mensagem: " + mensagem);
 
-  if (strcmp(topico, TOPICO_COMANDO) == 0)
-  {
-    tratarComando(mensagem);
-    return;
-  }
+    if (strcmp(topico, TOPICO_COMANDO) == 0)
+    {
+        tratarComando(mensagem);
+        return;
+    }
 
-  if (strcmp(topico, TOPICO_CENTRAL) == 0)
-  {
-    if(strcmp(mensagem.c_str(), "pressionado"))
-    countdown = 20;
-    return;
-  }
+    if (strcmp(mensagem.c_str(), "pressionado") == 0)
+    {
+        countdown = 20;
+        alterarCorLedRGB(0, 255, 0);
+        noTone(PINO_BUZZER);
+        return;
+    }
 
-  debugErro("Tópico não tratado: " + String(topico));
+    debugErro("Tópico não tratado: " + String(topico));
 }
 
-void configuraLedRGB()
+void configurarLedRGB()
 {
-  ledRGB.begin();
-  ledRGB.setBrightness(80); // Colocamos a qtd de brilho para o led de 0 a 255
-  ledRGB.clear();
-  ledRGB.show(); // atualiza estado led
+    ledRGB.begin();
+    ledRGB.setBrightness(80);
+    ledRGB.clear();
+    ledRGB.show();
 }
 
 void alterarCorLedRGB(int vermelho, int verde, int azul)
 {
-  vermelho = constrain(vermelho, 0, 255);
-  verde = constrain(verde, 0, 255);
-  azul = constrain(azul, 0, 255);
+    vermelho = constrain(vermelho, 0, 255);
+    verde = constrain(verde, 0, 255);
+    azul = constrain(azul, 0, 255);
 
-  ledRGB.setPixelColor(0, ledRGB.Color(vermelho, verde, azul));
-  ledRGB.show();
+    ledRGB.setPixelColor(0, ledRGB.Color(vermelho, verde, azul));
+    ledRGB.show();
 
-  debugInfo("Cor aplicada o LED RGB");
-  debugInfo("R: " + String(vermelho));
-  debugInfo("G: " + String(verde));
-  debugInfo("B: " + String(azul));
+    debugInfo("Cor aplicada o LED RGB");
+    debugInfo("R: " + String(vermelho));
+    debugInfo("G: " + String(verde));
+    debugInfo("B: " + String(azul));
 }
 
 void tratarComando(const String &mensagem)
 {
-  const char *mensagemChar = mensagem.c_str();
-  lcd.clear();
-  if (strcmp(mensagemChar, "help") == 0)
-  {
-    debugInfo("Comandos:\n> reset\n> start\n> ...");
-  }
-  else if (strcmp(mensagemChar, "start") == 0)
-  {
-    publicarMensagem(TOPICO_LATERAIS, "start");
-  }
-  else if (strcmp(mensagemChar, "reset") == 0)
-  {
-    publicarMensagem(TOPICO_LATERAIS, "reset");
-  }
-  else
-    debugErro("Comando não encontrado! Use help para listar todos comandos.");
+    const char *mensagemChar = mensagem.c_str();
+    lcd.clear();
+    if (strcmp(mensagemChar, "help") == 0)
+    {
+        debugInfo("Comandos:\n> reset\n> start\n> ...");
+    }
+    else if (strcmp(mensagemChar, "start") == 0)
+    {
+        publicarMensagem(TOPICO_LATERAIS, "start");
+    }
+    else if (strcmp(mensagemChar, "reset") == 0)
+    {
+        publicarMensagem(TOPICO_LATERAIS, "reset");
+    }
+    else
+        debugErro("Comando não encontrado! Use help para listar todos comandos.");
 }
