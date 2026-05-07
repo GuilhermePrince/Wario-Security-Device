@@ -8,10 +8,17 @@
 #include "DebugManager.h"
 #include "secrets.h"
 #include <LED.h>
+#include "time.h"
+
+const char *ntpServer = "pool.ntp.org";
+const long gmtOffset_sec = -10800;
+const int daylightOffset_sec = 0;
 
 const uint8_t PINO_LED_RGB = 48;
 const uint8_t QUANTIDADE_LEDS = 1;
 const uint8_t PINO_BUZZER = 36;
+bool alerta = 0;
+bool houveTroca = false;
 
 Adafruit_NeoPixel ledRGB(
     QUANTIDADE_LEDS,
@@ -23,9 +30,12 @@ Led lampada(38);
 
 const char TOPICO_COMANDO[] = "wsd/comando";
 const char TOPICO_CENTRAL[] = "wsd/central";
-const char TOPICO_LATERAIS[] = "wsd/laterais";
+const char TOPICO_LOG[] = "wsd/log";
+const char TOPICO_LATERAIS_A[] = "wsd/laterais/a";
+const char TOPICO_LATERAIS_B[] = "wsd/laterais/b";
 
-int countdown = 20;
+const uint8_t TEMPO_ALARME = 60;
+int countdown = TEMPO_ALARME;
 
 // PROTOTIPOS
 
@@ -34,6 +44,7 @@ void tratarComando(const String &mensagem);
 void configurarLedRGB();
 void alterarCorLedRGB(int vermelho, int verde, int azul);
 void modoAlerta();
+void updateTela();
 
 void setup()
 {
@@ -44,10 +55,7 @@ void setup()
     conectarWiFi();
     registrarCallbackMensagem(tratarMensagemRecebida);
     conectarMQTT();
-
-    lcd.init();
-    lcd.backlight();
-    lcd.print("WS DEVICE");
+    configTime(gmtOffset_sec, daylightOffset_sec, ntpServer);
 
 }
 
@@ -55,32 +63,46 @@ void loop()
 {
     static unsigned long before = 0;
     static bool buzzerSound = 0;
+    houveTroca = false;
     if (millis() - before >= 1000)
     {
         before = millis();
         if (countdown > 0)
         {
             countdown--;
-            lcd.setCursor(0, 2);
-            lcd.printf("Tempo restante: %d  ", countdown);
 
             if (countdown == 0)
             {
+                struct tm timeinfo;
+
+                if (getLocalTime(&timeinfo))
+                {
+                    char horario[10];
+                    strftime(horario, sizeof(horario), "%H:%M:%S", &timeinfo);
+                    const char* logMensagem = "Conexão perdida com um dos pontos! " + char(horario);
+                    publicarMensagem(TOPICO_LOG, logMensagem);
+                }
+
                 lampada.blink(2);
-                publicarMensagem(TOPICO_LATERAIS, "alerta");
+                publicarMensagem(TOPICO_LATERAIS_A, "alerta");
+                publicarMensagem(TOPICO_LATERAIS_B, "alerta");
                 alterarCorLedRGB(255, 0, 0);
+                alerta = 1;
+                houveTroca = true;
             }
         }
         else
         {
-        buzzerSound = !buzzerSound;
-        buzzerSound ? tone(PINO_BUZZER, 800) : tone(PINO_BUZZER, 400);
-        }    
+            buzzerSound = !buzzerSound;
+            buzzerSound ? tone(PINO_BUZZER, 800) : tone(PINO_BUZZER, 400);
+        }
     }
 
     garantirMQTTConectado();
     garantirWiFiConectado();
     loopMQTT();
+    if(houveTroca)
+    updateTela();
 }
 
 void tratarMensagemRecebida(const char *topico, const String &mensagem)
@@ -104,12 +126,16 @@ void tratarMensagemRecebida(const char *topico, const String &mensagem)
         return;
     }
 
-    if (strcmp(mensagem.c_str(), "pressionado") == 0)
+    if (strcmp(topico, TOPICO_LATERAIS_A) == 0 || strcmp(topico, TOPICO_LATERAIS_B) == 0)
     {
-        countdown = 20;
-        alterarCorLedRGB(0, 255, 0);
-        noTone(PINO_BUZZER);
-        return;
+        if (strcmp(mensagem.c_str(), "pressionado") == 0)
+        {
+            debugInfo("Presença registrada.");
+            countdown = TEMPO_ALARME;
+            alterarCorLedRGB(0, 255, 0);
+            noTone(PINO_BUZZER);
+            return;
+        }
     }
 
     debugErro("Tópico não tratado: " + String(topico));
@@ -141,19 +167,64 @@ void alterarCorLedRGB(int vermelho, int verde, int azul)
 void tratarComando(const String &mensagem)
 {
     const char *mensagemChar = mensagem.c_str();
-    lcd.clear();
     if (strcmp(mensagemChar, "help") == 0)
     {
         debugInfo("Comandos:\n> reset\n> start\n> ...");
     }
     else if (strcmp(mensagemChar, "start") == 0)
     {
-        publicarMensagem(TOPICO_LATERAIS, "start");
+        debugInfo("STARTING...");
+        lcd.init();
+        lcd.backlight();
     }
     else if (strcmp(mensagemChar, "reset") == 0)
     {
-        publicarMensagem(TOPICO_LATERAIS, "reset");
+        debugInfo("RESETTING...");
+        publicarMensagem(TOPICO_LATERAIS_A, "reset");
+        publicarMensagem(TOPICO_LATERAIS_B, "reset");
+        alerta = 0;
+    }
+    else if (strcmp(mensagemChar, "stop") == 0)
+    {
+        debugInfo("STOPPING...");
+        noTone(PINO_BUZZER);
+        countdown = TEMPO_ALARME;
+        alterarCorLedRGB(0, 255, 0);
+        lampada.off();
+        houveTroca = true;
+    }
+    else if (strcmp(mensagemChar, "ping a") == 0)
+    {
+        debugInfo("PING...");
+        publicarMensagem(TOPICO_LATERAIS_A, "ping");
+    }
+    else if (strcmp(mensagemChar, "ping b") == 0)
+    {
+        debugInfo("PING...");
+        publicarMensagem(TOPICO_LATERAIS_B, "ping");
     }
     else
         debugErro("Comando não encontrado! Use help para listar todos comandos.");
+}
+
+void updateTela()
+{
+    switch (alerta)
+    {
+    case 0:
+        lcd.clear();
+        lcd.setCursor(0, 0);
+        lcd.print("WS DEVICE v1.0");
+        lcd.setCursor(0, 2);
+        lcd.print("NODE A: ONLINE");
+        lcd.setCursor(0, 3);
+        lcd.print("NODE B: ONLINE");
+        break;
+    case 1:
+        lcd.clear();
+        lcd.setCursor(0, 0);
+        lcd.print("WS DEVICE v1.0");
+        lcd.setCursor(0, 2);
+        lcd.print("  >>>>>ALERTA<<<<<  ");
+    }
 }
