@@ -23,7 +23,7 @@ Adafruit_NeoPixel ledRGB(
 Bounce botaoBoot = Bounce();
 
 
-const int TEMPO_ALARME = 30; // Tempo para verificação até que o alarme dispare
+const int TEMPO_ALARME = 15; // Tempo para verificação até que o alarme dispare
 
 int countdown = TEMPO_ALARME;
 
@@ -33,7 +33,8 @@ bool publicarMsg = false; // Verifica se houve alguma alteração para publicar 
 
 void tratarMensagemRecebida(const char *topico, const String &mensagem); // Trata da mensagem recebida, verifica se o tópico existe e chama a tratar JSOn Lateral
 void tratarJsonLateral(const String &mensagem);                          // Deserializa a mensagem recebida
-
+void updateEsp();
+String RespostaJson();
 void configuraLedRGB();
 void alterarCorLedRGB(int vermelho, int verde, int azul); // Seta a cor do RGB
 
@@ -133,6 +134,8 @@ void updateEsp()
         else
         {
             alterarCorLedRGB(255,0,0);
+            estadoAlerta = true;
+            publicarMsg = true;
         }
     }
     else
@@ -197,7 +200,8 @@ String RespostaJson()
     JsonDocument doc;
 
     doc["pressionado"] = true;
-
+    
+    
     String mensagem;
 
     serializeJson(doc, mensagem);

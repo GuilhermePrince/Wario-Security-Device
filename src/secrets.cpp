@@ -13,7 +13,7 @@ const char *WIFI_SENHA = "info@134";
 const char *MQTT_BROKER = "706524cf45374078abb8ff015db83f8c.s1.eu.hivemq.cloud";
 const int MQTT_PORTA = 8883;
 
-const char *MQTT_CLIENT_ID = "senai134/esp34/kelvinmazeika";
+const char *MQTT_CLIENT_ID = "senai134/esp34/guilhermeprince";
 
 const char *MQTT_USUARIO = "kelvin";
 const char *MQTT_SENHA = "Senai@134";
@@ -56,13 +56,13 @@ emyPxgcYxn/eR44/KJ4EBs+lVDR3veyJm+kXQ99b21/+jh5Xos1AnX5iItreGCc=
 )EOF";
 
 const char *TOPICOS_PUBLICAR[] = {
-    "wsd/central"
+    "wsd/laterais/b"
 };
 
 const int TOTAL_TOPICOS_PUBLICAR = 1;
 
 const char *TOPICOS_RECEBER[] = {
-    "wsd/laterais/a"
+    "wsd/central"
 };
 
 const int TOTAL_TOPICOS_RECEBER = 1;
