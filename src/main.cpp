@@ -9,6 +9,9 @@
 #include "DebugManager.h"
 #include "secrets.h"
 
+const uint8_t QUANTIDADE_LEDS = 1;
+const uint8_t PINO_LED_RGB = 48; // Pino do LED REGB soldado no ESP
+
 // Objeto LED RGB
 Adafruit_NeoPixel ledRGB(
     QUANTIDADE_LEDS,
@@ -19,8 +22,6 @@ Adafruit_NeoPixel ledRGB(
 // Objeto Botao com tratamento de Bounce
 Bounce botaoBoot = Bounce();
 
-const uint8_t PINO_LED_RGB = 48; // Pino do LED REGB soldado no ESP
-const uint8_t QUANTIDADE_LEDS = 1;
 
 const int TEMPO_ALARME = 30; // Tempo para verificação até que o alarme dispare
 
@@ -38,7 +39,7 @@ void alterarCorLedRGB(int vermelho, int verde, int azul); // Seta a cor do RGB
 
 // void tratamentoEspLateral();
 
-void contagemTempo();   //Realiza uma contagem decrescente
+void contagemTempo(); // Realiza uma contagem decrescente
 
 void updateLed();
 
@@ -65,7 +66,6 @@ void loop()
     contagemTempo();
 
     updateEsp();
-    
 }
 
 void tratarMensagemRecebida(const char *topico, const String &mensagem)
@@ -83,7 +83,7 @@ void tratarMensagemRecebida(const char *topico, const String &mensagem)
     debugInfo("Tópico: " + String(topico));
     debugInfo("Mensagem " + mensagem);
 
-    if (strcmp(topico, TOPICOS_PUBLICAR[0]) == 0)
+    if (strcmp(topico, TOPICOS_RECEBER[0]) == 0)
     {
         tratarJsonLateral(mensagem);
         return;
@@ -103,51 +103,49 @@ void tratarJsonLateral(const String &mensagem)
         return;
     }
 
-    if (doc["alerta"].is<JsonObject>())
+    if (doc["alerta"].is<bool>())
     {
-        if (doc["alerta"].is<bool>())
-        {
-            estadoAlerta = doc["alerta"].as<bool>();
-        }
+        estadoAlerta = doc["alerta"].as<bool>();
+
+        debugInfo("Estado alerta: " + String(estadoAlerta));
     }
 }
 
-
-
-void updateEsp()   
+void updateEsp()
 {
     if (!estadoAlerta)
     {
         if (botaoBoot.fell())
-    {
-        publicarMsg = true;
-        debugInfo("Resetando Contagem");
-        countdown = TEMPO_ALARME;
-    }
-        if (countdown > 5 && countdown <= TEMPO_ALARME)
         {
-            alterarCorLedRGB(0, 255, 0);
-            return;
+            publicarMsg = true;
+            countdown = TEMPO_ALARME;
+            debugInfo("Resetando contagem");
         }
-        else if (countdown <= 5)
+
+        if (countdown > 5)
         {
-            alterarCorLedRGB(255, 165, 0);
-            return;
+            alterarCorLedRGB(0,255,0);
+        }
+        else if (countdown > 0)
+        {
+            alterarCorLedRGB(255,165,0);
         }
         else
         {
-            alterarCorLedRGB(255, 0, 0);
-            publicarMsg = true;
+            alterarCorLedRGB(255,0,0);
         }
     }
-    else 
+    else
     {
-        alterarCorLedRGB(255, 0, 0);
-        return;
+        alterarCorLedRGB(255,0,0);
     }
-    if(publicarMsg)
+
+    if (publicarMsg)
     {
-        publicarMensagemNoTopico(0, RespostaJson());
+        String msg = RespostaJson();
+
+        publicarMensagemNoTopico(0, msg.c_str());
+
         publicarMsg = false;
     }
 }
@@ -178,7 +176,7 @@ void alterarCorLedRGB(int vermelho, int verde, int azul)
 }
 void contagemTempo() // função que conta o tempo continuamente
 {
-    if(estadoAlerta)
+    if (estadoAlerta)
     {
         countdown = TEMPO_ALARME;
         return;
@@ -187,20 +185,22 @@ void contagemTempo() // função que conta o tempo continuamente
     static unsigned int tempoAnterior = 0;
     if (tempoAtual - tempoAnterior >= 1000)
     {
-        if (countdown > 0)
-            countdown--;
+    tempoAnterior = tempoAtual;
+
+    if (countdown > 0)
+        countdown--;
     }
 }
 
-const char* RespostaJson()
+String RespostaJson()
 {
     JsonDocument doc;
-    
+
     doc["pressionado"] = true;
 
-    String mensagem = "";
-    
-    serializeJsonPretty(doc, mensagem);
+    String mensagem;
 
-    return mensagem.c_str();
+    serializeJson(doc, mensagem);
+
+    return mensagem;
 }
