@@ -8,50 +8,37 @@
 #include "MqttManager.h"
 #include "DebugManager.h"
 #include "secrets.h"
-#include <Bounce2.h>
 
-const uint8_t QUANTIDADE_LEDS = 3;
-const uint8_t PINO_LED_RGB = 36;
-
-Adafruit_NeoPixel ledRGB(
-    QUANTIDADE_LEDS,
-    PINO_LED_RGB,
-    NEO_GRB + NEO_KHZ800); 
-
-
-Bounce botaoBoot = Bounce();
-
-void configuraLedRGB();
-void alterarCorLedRGB(int verde, int laranja, int vermelho);
-
-const uint8_t PINO_LED_RGB = 48;
-const uint8_t QUANTIDADE_LEDS = 1;
-
-const int TEMPO_ALARME = 60;
-int countdown = TEMPO_ALARME;
-bool houveTroca = 0;
-
-const char TOPICO_LATERAIS_A[] = "wsd/laterais/a";
-const char TOPICO_CENTRAL[] = "wsd/central";
-
+// Objeto LED RGB
 Adafruit_NeoPixel ledRGB(
     QUANTIDADE_LEDS,
     PINO_LED_RGB,
     NEO_GRB + NEO_KHZ800 // Duas constantes que definem a saidas do rgb e a frquencia de propagacao da informacao entre os LED`s, nesse caso é igual a 82
 );
 
+// Objeto Botao com tratamento de Bounce
 Bounce botaoBoot = Bounce();
 
-bool estadoAlerta = 0;
-bool locked = 0;
+const uint8_t PINO_LED_RGB = 48; // Pino do LED REGB soldado no ESP
+const uint8_t QUANTIDADE_LEDS = 1;
+
+const int TEMPO_ALARME = 30; // Tempo para verificação até que o alarme dispare
+
+int countdown = TEMPO_ALARME;
+
+bool estadoAlerta = 0; // Dispara o alarme e trava as funções do ESP lateral
+
+bool publicarMsg = false; // Verifica se houve alguma alteração para publicar ao esp central
+
+void tratarMensagemRecebida(const char *topico, const String &mensagem); // Trata da mensagem recebida, verifica se o tópico existe e chama a tratar JSOn Lateral
+void tratarJsonLateral(const String &mensagem);                          // Deserializa a mensagem recebida
 
 void configuraLedRGB();
-void alterarCorLedRGB(int vermelho, int verde, int azul);
-void tratarJsonLateral(const String &mensagem);
+void alterarCorLedRGB(int vermelho, int verde, int azul); // Seta a cor do RGB
 
-void tratarMensagemRecebida(const char *topico, const String &mensagem);
+// void tratamentoEspLateral();
 
-void tratamentoEspLateral();
+void contagemTempo();   //Realiza uma contagem decrescente
 
 void updateLed();
 
@@ -67,18 +54,18 @@ void setup()
     conectarMQTT();
     botaoBoot.attach(0, INPUT_PULLUP);
     botaoBoot.interval(5);
-botaoBoot.attach(0, INPUT_PULLUP);
 }
 
 void loop()
 {
-    houveTroca = false;
     garantirWiFiConectado();
     garantirMQTTConectado();
     botaoBoot.update();
     loopMQTT();
+    contagemTempo();
 
-    tratamentoEspLateral();
+    updateEsp();
+    
 }
 
 void tratarMensagemRecebida(const char *topico, const String &mensagem)
@@ -96,13 +83,73 @@ void tratarMensagemRecebida(const char *topico, const String &mensagem)
     debugInfo("Tópico: " + String(topico));
     debugInfo("Mensagem " + mensagem);
 
-    if (strcmp(topico, TOPICO_LATERAIS_A) == 0)
+    if (strcmp(topico, TOPICOS_PUBLICAR[0]) == 0)
     {
         tratarJsonLateral(mensagem);
         return;
     }
 
     debugErro("Tópico não tratado: " + String(topico));
+}
+
+void tratarJsonLateral(const String &mensagem)
+{
+    JsonDocument doc;
+    DeserializationError erro = deserializeJson(doc, mensagem);
+
+    if (erro)
+    {
+        debugErro("Json inválido, corrija a formatação.");
+        return;
+    }
+
+    if (doc["alerta"].is<JsonObject>())
+    {
+        if (doc["alerta"].is<bool>())
+        {
+            estadoAlerta = doc["alerta"].as<bool>();
+        }
+    }
+}
+
+
+
+void updateEsp()   
+{
+    if (!estadoAlerta)
+    {
+        if (botaoBoot.fell())
+    {
+        publicarMsg = true;
+        debugInfo("Resetando Contagem");
+        countdown = TEMPO_ALARME;
+    }
+        if (countdown > 5 && countdown <= TEMPO_ALARME)
+        {
+            alterarCorLedRGB(0, 255, 0);
+            return;
+        }
+        else if (countdown <= 5)
+        {
+            alterarCorLedRGB(255, 165, 0);
+            return;
+        }
+        else
+        {
+            alterarCorLedRGB(255, 0, 0);
+            publicarMsg = true;
+        }
+    }
+    else 
+    {
+        alterarCorLedRGB(255, 0, 0);
+        return;
+    }
+    if(publicarMsg)
+    {
+        publicarMensagemNoTopico(0, RespostaJson());
+        publicarMsg = false;
+    }
 }
 
 void configuraLedRGB()
@@ -120,8 +167,6 @@ void alterarCorLedRGB(int vermelho, int verde, int azul)
     vermelho = constrain(vermelho, 0, 255);
     verde = constrain(verde, 0, 255);
     azul = constrain(azul, 0, 255);
-botaoBoot.update();
-
 
     ledRGB.setPixelColor(0, ledRGB.Color(vermelho, verde, azul));
     ledRGB.show();
@@ -131,51 +176,31 @@ botaoBoot.update();
     debugInfo("G: " + String(verde));
     debugInfo("B: " + String(azul));
 }
-
-void tratarJsonLateral(const String &mensagem)
+void contagemTempo() // função que conta o tempo continuamente
 {
-    JsonDocument doc;
-    DeserializationError erro = deserializeJson(doc, mensagem);
-    
-    if(erro)
+    if(estadoAlerta)
     {
-        debugErro("Json inválido, corrija a formatação.");
+        countdown = TEMPO_ALARME;
         return;
     }
-    
-    if(doc["alerta"].is<JsonObject>())
+    unsigned int tempoAtual = millis();
+    static unsigned int tempoAnterior = 0;
+    if (tempoAtual - tempoAnterior >= 1000)
     {
-        if(!doc["alerta"].is<bool>())
-        {
-         debugErro("Json invalido. use valores booleanos");
-         return;
-        }
-        else
-        {
-         estadoAlerta = doc["alerta"].as<bool>();
-         
-         void tratarEspLateral();
-        }
+        if (countdown > 0)
+            countdown--;
     }
-   
-
 }
 
-void updateLed()
+const char* RespostaJson()
 {
-    switch (estadoAlerta)
-    {
-    case 0:
-        alterarCorLedRGB(0, 255, 0);
-        break;
-    case 1:
-        alterarCorLedRGB(255, 150, 0);
-        break;
-    case 2:
-        alterarCorLedRGB(255, 25, 0);
-        break;
-    case 3:
-        alterarCorLedRGB(255, 0, 0);
-        break;
-    }
+    JsonDocument doc;
+    
+    doc["pressionado"] = true;
+
+    String mensagem = "";
+    
+    serializeJsonPretty(doc, mensagem);
+
+    return mensagem.c_str();
 }
