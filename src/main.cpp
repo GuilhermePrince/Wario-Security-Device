@@ -17,16 +17,16 @@ const int daylightOffset_sec = 0;
 const uint8_t PINO_LED_RGB = 48;
 const uint8_t QUANTIDADE_LEDS = 1;
 const uint8_t PINO_BUZZER = 36;
+Led lampada(38);
+
 bool alerta = 0;
-bool houveTroca = false;
 
 Adafruit_NeoPixel ledRGB(
     QUANTIDADE_LEDS,
     PINO_LED_RGB,
-    NEO_GRB + NEO_KHZ800 // Duas constantes que definem a saidas do rgb e a frquencia de propagacao da informacao entre os LED`s, nesse caso é igual a 82
+    NEO_GRB + NEO_KHZ800
 );
 LiquidCrystal_I2C lcd(0x27, 20, 4);
-Led lampada(38);
 
 const char TOPICO_COMANDO[] = "wsd/comando";
 const char TOPICO_CENTRAL[] = "wsd/central";
@@ -34,17 +34,20 @@ const char TOPICO_LOG[] = "wsd/log";
 const char TOPICO_LATERAIS_A[] = "wsd/laterais/a";
 const char TOPICO_LATERAIS_B[] = "wsd/laterais/b";
 
-const uint8_t TEMPO_ALARME = 60;
+const uint8_t TEMPO_ALARME = 30;
 int countdown = TEMPO_ALARME;
+bool pressionado = 0;
 
 // PROTOTIPOS
 
 void tratarMensagemRecebida(const char *topico, const String &mensagem);
 void tratarComando(const String &mensagem);
+void tratarJson(const String &mensagem);
 void configurarLedRGB();
 void alterarCorLedRGB(int vermelho, int verde, int azul);
-void modoAlerta();
-void updateTela();
+void updateEstado();
+void serializarAlerta(bool modo);
+void sendLog();
 
 void setup()
 {
@@ -55,15 +58,17 @@ void setup()
     conectarWiFi();
     registrarCallbackMensagem(tratarMensagemRecebida);
     conectarMQTT();
+
+    lcd.init();
+    lcd.backlight();
     configTime(gmtOffset_sec, daylightOffset_sec, ntpServer);
+    updateEstado();
 
 }
 
 void loop()
 {
     static unsigned long before = 0;
-    static bool buzzerSound = 0;
-    houveTroca = false;
     if (millis() - before >= 1000)
     {
         before = millis();
@@ -73,36 +78,18 @@ void loop()
 
             if (countdown == 0)
             {
-                struct tm timeinfo;
-
-                if (getLocalTime(&timeinfo))
-                {
-                    char horario[10];
-                    strftime(horario, sizeof(horario), "%H:%M:%S", &timeinfo);
-                    const char* logMensagem = "Conexão perdida com um dos pontos! " + char(horario);
-                    publicarMensagem(TOPICO_LOG, logMensagem);
-                }
-
-                lampada.blink(2);
-                publicarMensagem(TOPICO_LATERAIS_A, "alerta");
-                publicarMensagem(TOPICO_LATERAIS_B, "alerta");
-                alterarCorLedRGB(255, 0, 0);
-                alerta = 1;
-                houveTroca = true;
+                alerta = true;
+                updateEstado();
+                serializarAlerta(alerta);
+                sendLog();
             }
-        }
-        else
-        {
-            buzzerSound = !buzzerSound;
-            buzzerSound ? tone(PINO_BUZZER, 800) : tone(PINO_BUZZER, 400);
         }
     }
 
     garantirMQTTConectado();
     garantirWiFiConectado();
     loopMQTT();
-    if(houveTroca)
-    updateTela();
+    lampada.update();
 }
 
 void tratarMensagemRecebida(const char *topico, const String &mensagem)
@@ -128,14 +115,8 @@ void tratarMensagemRecebida(const char *topico, const String &mensagem)
 
     if (strcmp(topico, TOPICO_LATERAIS_A) == 0 || strcmp(topico, TOPICO_LATERAIS_B) == 0)
     {
-        if (strcmp(mensagem.c_str(), "pressionado") == 0)
-        {
-            debugInfo("Presença registrada.");
-            countdown = TEMPO_ALARME;
-            alterarCorLedRGB(0, 255, 0);
-            noTone(PINO_BUZZER);
-            return;
-        }
+        tratarJson(mensagem);
+        return;
     }
 
     debugErro("Tópico não tratado: " + String(topico));
@@ -166,52 +147,50 @@ void alterarCorLedRGB(int vermelho, int verde, int azul)
 
 void tratarComando(const String &mensagem)
 {
-    const char *mensagemChar = mensagem.c_str();
-    if (strcmp(mensagemChar, "help") == 0)
+    if(strcmp(mensagem.c_str(), "RESET") == 0)
     {
-        debugInfo("Comandos:\n> reset\n> start\n> ...");
-    }
-    else if (strcmp(mensagemChar, "start") == 0)
-    {
-        debugInfo("STARTING...");
-        lcd.init();
-        lcd.backlight();
-    }
-    else if (strcmp(mensagemChar, "reset") == 0)
-    {
-        debugInfo("RESETTING...");
-        publicarMensagem(TOPICO_LATERAIS_A, "reset");
-        publicarMensagem(TOPICO_LATERAIS_B, "reset");
-        alerta = 0;
-    }
-    else if (strcmp(mensagemChar, "stop") == 0)
-    {
-        debugInfo("STOPPING...");
-        noTone(PINO_BUZZER);
+        alerta = false;
         countdown = TEMPO_ALARME;
-        alterarCorLedRGB(0, 255, 0);
-        lampada.off();
-        houveTroca = true;
+        serializarAlerta(alerta);
+        updateEstado();
+        debugInfo("Alerta resetado");
     }
-    else if (strcmp(mensagemChar, "ping a") == 0)
+    else if(strcmp(mensagem.c_str(), "ALERTA") == 0)
     {
-        debugInfo("PING...");
-        publicarMensagem(TOPICO_LATERAIS_A, "ping");
-    }
-    else if (strcmp(mensagemChar, "ping b") == 0)
-    {
-        debugInfo("PING...");
-        publicarMensagem(TOPICO_LATERAIS_B, "ping");
+        alerta = true;
+        serializarAlerta(alerta);
+        updateEstado();
+        debugInfo("Modo alerta ativado");
     }
     else
-        debugErro("Comando não encontrado! Use help para listar todos comandos.");
+    {
+        debugErro("Comando desconhecido: " + mensagem);
+    }
 }
 
-void updateTela()
+void tratarJson(const String &mensagem)
 {
-    switch (alerta)
+    JsonDocument doc;
+  DeserializationError error = deserializeJson(doc, mensagem);
+
+  if (!error)
+  {
+    if (doc["pressionado"].is<JsonVariant>())
     {
-    case 0:
+      pressionado = doc["pressionado"];
+      if (pressionado)
+      {
+        countdown = TEMPO_ALARME;
+        pressionado = 0;
+      }
+    }
+  }
+}
+
+void updateEstado()
+{
+    if(!alerta)
+    {
         lcd.clear();
         lcd.setCursor(0, 0);
         lcd.print("WS DEVICE v1.0");
@@ -219,12 +198,52 @@ void updateTela()
         lcd.print("NODE A: ONLINE");
         lcd.setCursor(0, 3);
         lcd.print("NODE B: ONLINE");
-        break;
-    case 1:
+
+        alterarCorLedRGB(0, 255, 0);
+        lampada.on();
+        noTone(PINO_BUZZER);
+    }
+    else
+    {
         lcd.clear();
         lcd.setCursor(0, 0);
         lcd.print("WS DEVICE v1.0");
         lcd.setCursor(0, 2);
         lcd.print("  >>>>>ALERTA<<<<<  ");
+
+        alterarCorLedRGB(255, 0, 0);
+        lampada.blink();
+        tone(PINO_BUZZER, 1000);
+    }
+    
+}
+
+void serializarAlerta(bool modo)
+{
+    JsonDocument doc;
+    doc["alerta"] = modo;
+
+    String mensagem;
+    serializeJson(doc, mensagem);
+
+    publicarMensagem(TOPICO_CENTRAL, mensagem.c_str());
+}
+
+void sendLog()
+{
+    {
+       struct tm timeinfo;
+       if (getLocalTime(&timeinfo))
+       {
+           char buffer[20];
+           strftime(buffer, sizeof(buffer), "%Y-%m-%d %H:%M:%S", &timeinfo);
+           String timestamp(buffer);
+           publicarMensagem(TOPICO_LOG, "Alerta ativado em: ");
+           publicarMensagem(TOPICO_LOG, timestamp.c_str());
+       }
+       else
+       {
+           debugErro("Falha ao obter a hora local");
+       }  
     }
 }
